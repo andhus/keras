@@ -472,7 +472,12 @@ class RNN(Layer):
             kwargs['initial_state'] = initial_state
             return super(RNN, self).__call__(inputs, **kwargs)
 
-    def call(self, inputs, mask=None, training=None, initial_state=None):
+    def call(self,
+             inputs,
+             mask=None,
+             training=None,
+             initial_state=None,
+             constants=None):
         # input shape: `(samples, time (padded with zeros), input_dim)`
         # note that the .build() method of subclasses MUST define
         # self.input_spec and self.state_spec with complete input shapes.
@@ -508,9 +513,17 @@ class RNN(Layer):
                              '- If using the functional API, specify '
                              'the time dimension by passing a `shape` '
                              'or `batch_shape` argument to your Input layer.')
-
+        kwargs = {}
         if has_arg(self.cell.call, 'training'):
-            step = functools.partial(self.cell.call, training=training)
+            kwargs['training'] = training
+
+        if constants is not None:
+            if not has_arg(self.cell.call, 'constants'):
+                raise TypeError('cell does not take keyword argument constants')
+            kwargs['constants'] = constants
+
+        if kwargs:
+            step = functools.partial(self.cell.call, **kwargs)
         else:
             step = self.cell.call
         last_output, outputs, states = K.rnn(step,

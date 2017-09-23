@@ -3,11 +3,76 @@ from __future__ import absolute_import
 
 import abc
 
+from keras.engine import Model
 from keras.layers import Wrapper, concatenate
 from keras import backend as K
 
 
-class AttentionCellABC(Wrapper):
+class AttentionCellABC(object):
+
+    def call(self, inputs, states, constants):
+        """
+        # Returns
+            inputs: input tensor
+            states: (list of) state tensor(s)
+            constants: (list of) attended tensor(s)
+        """
+        pass
+
+    @abc.abstractproperty
+    def state_size(self):
+        pass
+
+
+class RNNCellModel(Model):
+
+    def __init__(
+        self,
+        inputs,
+        outputs,
+        input_states,
+        output_states,
+        constants=None
+    ):
+        input_states = to_list(input_states)
+        constants = to_list(constants) if constants else None
+        self._n_states = len(input_states)
+        self._n_constants = len(constants) if constants else 0
+        super(RNNCellModel, self).__init__(
+            inputs=self._get_model_inputs(inputs, input_states, constants),
+            outputs=self._get_model_outputs(outputs, output_states)
+        )
+        states_shape = get_shape(input_states)
+        if not states_shape == get_shape(output_states):
+            raise ValueError(
+                'shape of input states must same as shape of output states'
+            )
+        self._state_size = [state_shape[-1] for state_shape in states_shape]
+
+    @property
+    def state_size(self):
+        return self._state_size
+
+    def call(self, inputs, states, constants=None, training=None):
+        output, states = self._get_output_and_output_states(
+            super(RNNCellModel, self).call(
+                self._get_model_inputs(inputs, states, constants)
+            )
+        )
+        # TOdO use training?
+        return output, states
+
+    def _get_model_inputs(self, inputs, input_states, constants):
+        return [inputs] + list(input_states) + (constants or [])
+
+    def _get_model_outputs(self, outputs, output_states):
+        return [outputs] + output_states
+
+    def _get_output_and_output_states(self, outputs):
+        return outputs[0], outputs[1:]
+
+
+class AttentionCellBase(Wrapper):
 
     def __init__(
         self,
@@ -105,8 +170,8 @@ class AttentionCellABC(Wrapper):
 
         return tuple(state_size_s)
 
-    def call(self, inputs, states, attended=None):
-        attended = attended or self.attended
+    def call(self, inputs, states, constants=None):
+        attended = constants or self.attended
         if attended is None:
             raise RuntimeError(
                 'attended must either be passed in call or set as property'
@@ -260,3 +325,33 @@ class AttentionCellABC(Wrapper):
         else:
             # must be only one
             return attended_shapes[0]
+
+
+def to_list(x):
+    if isinstance(x, list):
+        return x
+    return [x]
+
+
+def get_shape(inputs):
+    # TODO duplicates code in Layer...
+    if isinstance(inputs, list):
+        xs = inputs
+        return_list = True
+    else:
+        xs = [inputs]
+        return_list = False
+
+    inputs_shape = []
+    for x in xs:
+        if hasattr(x, '_keras_shape'):
+            inputs_shape.append(x._keras_shape)
+        elif hasattr(K, 'int_shape'):
+            inputs_shape.append(K.int_shape(x))
+        else:
+            raise ValueError('cannot infer shape of {}'.format(x))
+    if return_list:
+        return inputs_shape
+    else:
+        # must be only one
+        return inputs_shape[0]
