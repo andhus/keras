@@ -34,8 +34,8 @@ class RNNCellModel(Model):
         output_states,
         constants=None
     ):
-        input_states = to_list(input_states)
-        constants = to_list(constants) if constants else None
+        input_states = to_list_or_none(input_states)
+        constants = to_list_or_none(constants)
         self._n_states = len(input_states)
         self._n_constants = len(constants) if constants else 0
         super(RNNCellModel, self).__init__(
@@ -59,11 +59,14 @@ class RNNCellModel(Model):
                 self._get_model_inputs(inputs, states, constants)
             )
         )
-        # TOdO use training?
+        # TODO use training?
         return output, states
 
     def _get_model_inputs(self, inputs, input_states, constants):
-        return [inputs] + list(input_states) + (constants or [])
+        inputs = [inputs] + list(input_states)
+        if constants is not None:
+            inputs += constants
+        return inputs
 
     def _get_model_outputs(self, outputs, output_states):
         return [outputs] + output_states
@@ -268,13 +271,13 @@ class AttentionCellBase(Wrapper):
         else:
             return 1
 
-    def build(self, input_shape):
+    def build(self, input_shape, attened_shape):
         """step input shape"""
-        if self.attended is None:
-            raise RuntimeError('attended must be set before build is called')
+        # if self.attended is None:
+        #     raise RuntimeError('attended must be set before build is called')
 
         self.attention_build(
-            self._get_attended_shape(),
+            attended_shape,
             input_shape,
             self.wrapped_cell.state_size
         )
@@ -327,9 +330,11 @@ class AttentionCellBase(Wrapper):
             return attended_shapes[0]
 
 
-def to_list(x):
-    if isinstance(x, list):
+def to_list_or_none(x):
+    if x is None or isinstance(x, list):
         return x
+    if isinstance(x, tuple):
+        return list(x)
     return [x]
 
 
