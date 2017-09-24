@@ -453,7 +453,7 @@ class RNN(Layer):
         check_list = []
         if initial_state:
             check_list += initial_state
-        if constraints:
+        if constants:
             check_list += constants
         # NOTE check list can not be empty
         is_keras_tensor = hasattr(check_list[0], '_keras_history')
