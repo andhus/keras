@@ -185,7 +185,9 @@ class RNN(Layer):
     # Arguments
         cell: A RNN cell instance. A RNN cell is a class that has:
             - a `call(input_at_t, states_at_t)` method, returning
-                `(output_at_t, states_at_t_plus_1)`.
+                `(output_at_t, states_at_t_plus_1)`. The call method of the
+                cell can also take the optional argument `constants`, see
+                section "Note on passing external constants" below.
             - a `state_size` attribute. This can be a single integer
                 (single state) in which case it is
                 the size of the recurrent state
@@ -276,6 +278,14 @@ class RNN(Layer):
         `states` should be a numpy array or list of numpy arrays representing
         the initial state of the RNN layer.
 
+    # Note on passing external constants to RNNs
+        You can pass "external" constants to the cell using the `constants`
+        keyword argument of RNN.__call__ (as well as RNN.call) method. This
+        requires that the `cell.call` method accepts the same keyword argument
+        `constants`. Such constants can be used to condition the cell
+        transformation on additional static inputs (not changing over time)
+        (a.k.a. an attention mechanism).
+
     # Examples
 
     ```python
@@ -354,6 +364,8 @@ class RNN(Layer):
             self.state_spec = InputSpec(shape=(None, self.cell.state_size))
         self._states = None
 
+        self.external_constants_spec = None
+
     @property
     def states(self):
         if self._states is None:
@@ -399,18 +411,16 @@ class RNN(Layer):
             return output_mask
 
     def build(self, input_shape):
-        """Builds the wrapped recurrent cell.
-
-        # Args
-            input_shape (tuple | [tuple]): will contain shapes of initial
-                states and constants if passed in __call__.
-        """
-        if isinstance(input_shape, list):
-            if self.external_constants:
-                constants_shape = input_shape[-len(self.external_constants):]
-            input_shape = input_shape[0]
+        # Note input_shape will be list of shapes of initial states and
+        # constants if these are passed in __call__.
+        if self.external_constants_spec is not None:
+            # input_shape must be list
+            constants_shape = input_shape[-len(self.external_constants_spec):]
         else:
             constants_shape = None
+
+        if isinstance(input_shape, list):
+            input_shape = input_shape[0]
 
         batch_size = input_shape[0] if self.stateful else None
         input_dim = input_shape[-1]
@@ -445,17 +455,25 @@ class RNN(Layer):
             inputs, initial_state, constants)
 
         # we need to know length of constants in build
-        self.external_constants = constants
+        if constants:
+            self.external_constants_spec = [
+                InputSpec(shape=K.int_shape(constant))
+                for constant in constants
+            ]
 
         if initial_state is None and constants is None:
             return super(RNN, self).__call__(inputs, **kwargs)
+
+        # If any of `initial_state` or `constants` are specified and are Keras
+        # tensors, then add them to the inputs and temporarily modify the
+        # input_spec to include them.
 
         check_list = []
         if initial_state:
             check_list += initial_state
         if constants:
             check_list += constants
-        # NOTE check list can not be empty
+        # at this point check_list cannot be empty
         is_keras_tensor = hasattr(check_list[0], '_keras_history')
         for tensor in check_list:
             if hasattr(tensor, '_keras_history') != is_keras_tensor:
@@ -464,7 +482,7 @@ class RNN(Layer):
                                  ' Keras tensors and non-Keras tensors')
 
         if is_keras_tensor:
-            # Compute the full input spec, including state
+            # Compute the full input spec, including state and constants
             input_spec = self.input_spec
             state_spec = self.state_spec
             if not isinstance(input_spec, list):
@@ -478,10 +496,7 @@ class RNN(Layer):
                 inputs += initial_state
                 kwargs['initial_state'] = initial_state
             if constants:
-                self.input_spec += [
-                    InputSpec(shape=K.int_shape(constant))
-                    for constant in constants
-                ]
+                self.input_spec += self.external_constants_spec
                 inputs += constants
                 kwargs['constants'] = constants
 
@@ -493,7 +508,8 @@ class RNN(Layer):
             return output
         else:
             kwargs['initial_state'] = initial_state
-            kwargs['constants'] = constants
+            if constants is not None:
+                kwargs['constants'] = constants
             return super(RNN, self).__call__(inputs, **kwargs)
 
     def call(self,
