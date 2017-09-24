@@ -8,19 +8,32 @@ from keras.layers import Wrapper, concatenate
 from keras import backend as K
 
 
-class AttentionCellABC(object):
+class CellWithConstantsLayerABC(object):
 
-    def call(self, inputs, states, constants):
+    def call(self, inputs, states, constants=None):
         """
-        # Returns
+        # Args
             inputs: input tensor
-            states: (list of) state tensor(s)
-            constants: (list of) attended tensor(s)
+            states: list of state tensor(s)
+            constants: list of constant (not time dependent) tensor(s)
+
+        # Returns
+            outputs: output tensor
+            new_states: updated states
         """
         pass
 
     @abc.abstractproperty
     def state_size(self):
+        pass
+
+    @abc.abstractmethod
+    def build(self, input_shape):
+        """Builds the cell.
+        # Args
+            input_shape (tuple | [tuple]): will contain shapes of initial
+                states and constants if passed in __call__.
+        """
         pass
 
 
@@ -86,7 +99,7 @@ class AttentionCellBase(Wrapper):
         return_attention=False,
         **kwargs
     ):
-        super(AttentionCellABC, self).__init__(layer=wrapped_cell, **kwargs)
+        super(AttentionCellLayerABC, self).__init__(layer=wrapped_cell, **kwargs)
         self.units = units
         self.attend_after = attend_after
         self.concatenate_input = concatenate_input
@@ -271,10 +284,11 @@ class AttentionCellBase(Wrapper):
         else:
             return 1
 
-    def build(self, input_shape, attened_shape):
+    def build(self, input_shape):
         """step input shape"""
-        # if self.attended is None:
-        #     raise RuntimeError('attended must be set before build is called')
+        if isinstance(input_shape, list):
+            attended_shape = input_shape[1:]
+            input_shape = input_shape[0]
 
         self.attention_build(
             attended_shape,

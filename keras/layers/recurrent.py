@@ -399,9 +399,15 @@ class RNN(Layer):
             return output_mask
 
     def build(self, input_shape):
+        """Builds the wrapped recurrent cell.
+
+        # Args
+            input_shape (tuple | [tuple]): will contain shapes of initial
+                states and constants if passed in __call__.
+        """
         if isinstance(input_shape, list):
-            if self.uses_n_external_constants > 0:
-                constants_shape = input_shape[-self.uses_n_external_constants:]
+            if self.external_constants:
+                constants_shape = input_shape[-len(self.external_constants):]
             input_shape = input_shape[0]
         else:
             constants_shape = None
@@ -438,10 +444,8 @@ class RNN(Layer):
         inputs, initial_state, constants = self.normalize_args(
             inputs, initial_state, constants)
 
-
-        # FIXME CLEAN UP NORM OF KWARGS IN build and call
-        self.uses_external_initial_state = initial_state is not None
-        self.uses_n_external_constants = len(constants) if constants is not None else 0
+        # we need to know length of constants in build
+        self.external_constants = constants
 
         if initial_state is None and constants is None:
             return super(RNN, self).__call__(inputs, **kwargs)
@@ -578,7 +582,8 @@ class RNN(Layer):
 
     def normalize_args(self, inputs, initial_state=None, constants=None):
         """normalizes inputs
-        TODO doc"""
+        TODO docs
+        """
         if isinstance(inputs, (list, tuple)):
             remaining_inputs = inputs[1:]
             inputs = inputs[0]
