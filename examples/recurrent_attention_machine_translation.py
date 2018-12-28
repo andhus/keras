@@ -196,8 +196,8 @@ class DenseAnnotationAttention(Layer):
         """Complete attentive cell transformation.
         """
         attended = to_list(constants, allow_tuple=True)
-        # NOTE (!) K.rnn will pass constants as a tuple and `_collect_previous_mask`
-        # will return `None` if passed a tuple of tensors
+        # NOTE: `K.rnn` will pass constants as a tuple and `_collect_previous_mask`
+        # returns `None` if passed a tuple of tensors, hence `to_list` above!
         attended_mask = _collect_previous_mask(attended)
         cell_states = states
 
@@ -383,13 +383,12 @@ if __name__ == '__main__':
     #     max(input_tokenizer.word_index.values()) + 1,
     #     input_tokenizer.num_words
     # )
-    input_seqs_train, input_seqs_val, target_seqs_train, target_seqs_val = (
-        pad_sequences(seq, maxlen=MAX_WORDS_PER_SENTENCE,
+    pad_kwargs = dict(maxlen=MAX_WORDS_PER_SENTENCE,
                       padding='post', truncating='post')
-        for seq in [input_seqs_train,
-                    input_seqs_val,
-                    target_seqs_train,
-                    target_seqs_val])
+    input_seqs_train = pad_sequences(input_seqs_train, **pad_kwargs)
+    input_seqs_val = pad_sequences(input_seqs_val, **pad_kwargs)
+    target_seqs_train = pad_sequences(target_seqs_train, **pad_kwargs)
+    target_seqs_val = pad_sequences(target_seqs_val, **pad_kwargs)
 
     # Build model
     x = Input((None,), name="input_sequences")
@@ -402,7 +401,7 @@ if __name__ == '__main__':
                                     return_state=True))
     x_enc, h_enc_fwd_final, h_enc_bkw_final = encoder_rnn(x_emb)
 
-    # half of the dense annotation can be computed onece per input sequence since it
+    # half of the dense annotation can be computed once per input sequence since it
     # is independent of the RNN state
     u = TimeDistributed(Dense(DENSE_ATTENTION_UNITS, use_bias=False))(x_enc)
 
